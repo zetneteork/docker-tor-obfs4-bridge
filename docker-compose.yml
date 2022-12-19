@@ -1,0 +1,23 @@
+version: "3.4"
+services:
+  obfs4-bridge:
+    image: zetneteork/docker-obfs4-bridge:0.4.7.10
+    network_mode: bridge
+    environment:
+      # Exit with an error message if OR_PORT is unset or empty.
+      - OR_PORT=${OR_PORT:?Env var OR_PORT is not set.}
+      # Exit with an error message if PT_PORT is unset or empty.
+      - PT_PORT=${PT_PORT:?Env var PT_PORT is not set.}
+      # Exit with an error message if EMAIL is unset or empty.
+      - EMAIL=${EMAIL:?Env var EMAIL is not set.}
+    volumes:
+      - data:/var/lib/tor
+    ports:
+      - ${OR_PORT}:${OR_PORT}
+      - ${PT_PORT}:${PT_PORT}
+    restart: unless-stopped
+
+volumes:
+  data:
+    name: tor-datadir-${OR_PORT}-${PT_PORT}
+
