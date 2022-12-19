@@ -1,6 +1,6 @@
 version: "3.4"
 services:
-  obfs4-bridge:
+  tor-obfs4-bridge:
     image: zetneteork/tor-obfs4-bridge:0.4.7.12-1
     network_mode: bridge
     environment:
