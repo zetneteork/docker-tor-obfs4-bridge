@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: tor
-          image: zetneteork/docker-obfs4-bridge:latest
+          image: zetneteork/tor-obfs4-bridge:latest
           securityContext:
             allowPrivilegeEscalation: false
             runAsUser: 0

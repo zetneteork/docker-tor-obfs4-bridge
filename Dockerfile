@@ -1,7 +1,6 @@
 # Base docker image
 FROM debian:stable-slim
 
-#LABEL maintainer="Philipp Winter <phw@torproject.org>"
 LABEL maintainer="tor@opentree.cz <tor@opentree.cz>"
 
 # Install dependencies to add Tor's repository.

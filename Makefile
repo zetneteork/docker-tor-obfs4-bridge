@@ -1,5 +1,4 @@
-IMAGE=zetneteork/docker-obfs4-bridge
-AIMAGE=phwinter/obfs4-bridge
+IMAGE=zetneteork/tor-obfs4-bridge
 
 .PHONY: tag
 tag:
