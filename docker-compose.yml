@@ -12,8 +12,8 @@ services:
       - EMAIL=${EMAIL:?Env var EMAIL is not set.}
       # Exit with an error message if TOR_OR_PORT_IPV4 is unset or empty.
       - TOR_OR_PORT_IPV4=${TOR_OR_PORT_IPV4:?Env var TOR_OR_PORT_IPV4 is not set.}
-      # Exit with an error message if TOR_OR_PORT_IPV4 is unset or empty.
-      - TOR_OR_PORT_IPV4=${TOR_OR_PORT_IPV4:?Env var TOR_OR_PORT_IPV4 is not set.}
+      # Exit with an error message if TOR_EXITRELAY is unset or empty.
+      - TOR_EXITRELAY=${TOR_EXITRELAY:?Env var TOR_EXITRELAY is not set.}
       # Exit with an error message if TOR_BRIDGERELAY is unset or empty.
       - TOR_BRIDGERELAY=${TOR_BRIDGERELAY:?Env var TOR_BRIDGERELAY is not set.}
     volumes:
