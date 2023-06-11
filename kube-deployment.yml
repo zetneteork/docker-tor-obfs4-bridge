@@ -75,6 +75,12 @@ spec:
               value: "tor@opentree.cz"
             - name: OR_PORT
               value: "2123"
+            - name: TOR_OR_PORT_IPV4
+              value: "0"
+            - name: TOR_EXITRELAY
+              value: "0"
+            - name: TOR_BRIDGERELAY
+              value: "1"
             - name: PATH
               value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           ports:

@@ -26,7 +26,7 @@ RUN \
         tor-geoipdb \
         obfs4proxy/${VERSION_CODENAME}-backports \
         --no-install-recommends &&\
-    apt-get dist-upgrade -qyf &&\
+    #apt-get dist-upgrade -qyf &&\
     echo "**** cleanup ****" && \
     apt-get clean && \
     rm -rf \
@@ -39,7 +39,9 @@ RUN \
     rm /etc/tor/torrc &&\
     chown debian-tor:debian-tor /etc/tor &&\
     chown debian-tor:debian-tor /var/log/tor &&\
-    echo "install completed"
+    echo "install completed" &&\
+    dpkg -s tor | grep '^Version:'
+
     
 COPY start-tor.sh /usr/local/bin
 RUN chmod 0755 /usr/local/bin/start-tor.sh

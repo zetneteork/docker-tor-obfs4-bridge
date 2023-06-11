@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 
-echo "Using OR_PORT=${OR_PORT}, PT_PORT=${PT_PORT}, and EMAIL=${EMAIL}."
+if [ TOR_OR_PORT_IPV4 = '1']; then
+    TOR_OR_PORT_IPV4="IPv4Only"
+else
+    TOR_OR_PORT_IPV4=""
+fi
+
+TOR_VERSION=$(dpkg -s tor | grep '^Version:')
+
+echo "Using TOR_VERSION=${TOR_VERSION}, OR_PORT=${OR_PORT}, TOR_OR_PORT_IPV4=${TOR_OR_PORT_IPV4}, TOR_BRIDGERELAY=${TOR_BRIDGERELAY}, TOR_EXITRELAY=${TOR_EXITRELAY}, PT_PORT=${PT_PORT}, and EMAIL=${EMAIL}."
 
 cat > /etc/tor/torrc << EOF
 RunAsDaemon 0
 # We don't need an open SOCKS port.
 SocksPort 0
-BridgeRelay 1
+BridgeRelay ${TOR_BRIDGERELAY}
+ExitRelay ${TOR_EXITRELAY}
 # A static nickname makes it easy to identify bridges that were set up using
 # this Docker image.
 Nickname DockerObfs4Bridge
@@ -17,7 +26,7 @@ ExtORPort auto
 DataDirectory /var/lib/tor
 
 # The variable "OR_PORT" is replaced with the OR port.
-ORPort ${OR_PORT}
+ORPort ${OR_PORT} ${TOR_OR_PORT_IPV4}
 
 # The variable "PT_PORT" is replaced with the obfs4 port.
 ServerTransportListenAddr obfs4 0.0.0.0:${PT_PORT}
