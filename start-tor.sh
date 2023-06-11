@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-if [ TOR_OR_PORT_IPV4 = '1']; then
+if [ ${TOR_OR_PORT_IPV4} -eq 1 ]; then
     TOR_OR_PORT_IPV4="IPv4Only"
 else
     TOR_OR_PORT_IPV4=""
