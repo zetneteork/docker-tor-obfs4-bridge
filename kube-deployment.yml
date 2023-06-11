@@ -59,6 +59,7 @@ spec:
       containers:
         - name: tor
           image: zetneteork/tor-obfs4-bridge:latest
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             runAsUser: 0
