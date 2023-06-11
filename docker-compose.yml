@@ -10,6 +10,12 @@ services:
       - PT_PORT=${PT_PORT:?Env var PT_PORT is not set.}
       # Exit with an error message if EMAIL is unset or empty.
       - EMAIL=${EMAIL:?Env var EMAIL is not set.}
+      # Exit with an error message if TOR_OR_PORT_IPV4 is unset or empty.
+      - TOR_OR_PORT_IPV4=${TOR_OR_PORT_IPV4:?Env var TOR_OR_PORT_IPV4 is not set.}
+      # Exit with an error message if TOR_OR_PORT_IPV4 is unset or empty.
+      - TOR_OR_PORT_IPV4=${TOR_OR_PORT_IPV4:?Env var TOR_OR_PORT_IPV4 is not set.}
+      # Exit with an error message if TOR_BRIDGERELAY is unset or empty.
+      - TOR_BRIDGERELAY=${TOR_BRIDGERELAY:?Env var TOR_BRIDGERELAY is not set.}
     volumes:
       - data:/var/lib/tor
     ports:
@@ -20,4 +26,3 @@ services:
 volumes:
   data:
     name: tor-datadir-${OR_PORT}-${PT_PORT}
-
