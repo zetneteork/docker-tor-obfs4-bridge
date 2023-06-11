@@ -1,3 +1,4 @@
+export VESION=0.4.7.13-2
 export OR_PORT=2123
 export PT_PORT=2133
 export EMAIL=tor@opentree.cz
