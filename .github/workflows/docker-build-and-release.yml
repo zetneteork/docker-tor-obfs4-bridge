@@ -1,0 +1,111 @@
+name: Build, Push Multi-Arch Docker Image, Cleanup & Release
+
+on:
+  push: {}                       # Every commit
+  schedule:
+    - cron: '0 0 * * 1'          # Weekly on Monday at 00:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  build-publish-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Needed for arm builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine version (incrementing)
+        id: version
+        run: |
+          echo "VERSION=${{ github.run_number }}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=v${{ github.run_number }}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ github.run_number }}" >> $GITHUB_ENV
+          echo "Computed VERSION=${{ github.run_number }}"
+
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          tags: |
+            zetneteork/speedtest:latest
+            zetneteork/speedtest:${{ env.IMAGE_TAG }}
+
+      - name: Cleanup old Docker tags (keep latest 10)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          REPO: zetneteork/speedtest
+        run: |
+          echo "Fetching list of tags for $REPO..."
+          TOKEN=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d "{\"username\": \"${DOCKERHUB_USERNAME}\", \"password\": \"${DOCKERHUB_TOKEN}\"}" \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+
+          if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
+            echo "❌ Failed to authenticate with Docker Hub."
+            exit 1
+          fi
+
+          # Fetch all tags except 'latest', sorted by name descending
+          TAGS=$(curl -s -H "Authorization: JWT $TOKEN" \
+            "https://hub.docker.com/v2/repositories/$REPO/tags/?page_size=100" \
+            | jq -r '.results[].name' | grep -v latest | sort -rn)
+
+          echo "All version tags:"
+          echo "$TAGS"
+
+          # Keep latest 10 (numeric), delete the rest
+          TO_DELETE=$(echo "$TAGS" | tail -n +11)
+
+          if [ -z "$TO_DELETE" ]; then
+            echo "✅ Nothing to delete — less than or equal to 10 builds present."
+          else
+            echo "🧹 Deleting old tags:"
+            echo "$TO_DELETE"
+            for TAG in $TO_DELETE; do
+              echo "Deleting $REPO:$TAG"
+              curl -s -X DELETE -H "Authorization: JWT $TOKEN" \
+                "https://hub.docker.com/v2/repositories/$REPO/tags/$TAG/" > /dev/null
+            done
+          fi
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ env.VERSION }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          TARGET_COMMIT: ${{ github.sha }}
+        run: |
+          echo "Creating GitHub release ${RELEASE_TAG}"
+          payload=$(jq -n --arg tag "$RELEASE_TAG" \
+                         --arg name "Release $RELEASE_TAG" \
+                         --arg body "Multi-arch build (amd64, arm64, armhf) for version $VERSION (workflow run $GITHUB_RUN_ID)" \
+                         --arg target "$TARGET_COMMIT" \
+                         '{ tag_name: $tag, name: $name, body: $body, target_commitish: $target, draft: false, prerelease: false }')
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
+            | jq -r '.html_url // "no url returned (maybe an error)"' || true
