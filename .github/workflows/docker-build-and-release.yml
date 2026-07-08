@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -32,16 +32,16 @@ jobs:
         run: git fetch --tags --force
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build amd64 only, loaded locally, purely to read the Tor version that
       # Debian's apt repo currently resolves to. This decides whether a new
       # version/release is needed before we do the expensive multi-arch push.
       - name: Build amd64 image for version detection
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -138,9 +138,28 @@ jobs:
           git tag -f "${VERSION}"
           git push --force origin "refs/tags/${VERSION}"
 
+      # docker/login-action fails with an opaque "cannot perform an
+      # interactive login" error when the username/password it receives are
+      # empty, which is what happens if DOCKERHUB_USERNAME/DOCKERHUB_TOKEN
+      # are configured as *environment* secrets rather than *repository*
+      # secrets (this job doesn't declare an `environment:`, so it can't see
+      # environment-scoped secrets - they resolve to ""). Fail fast here with
+      # an actionable message instead of that generic error.
+      - name: Verify Docker Hub credentials are present
+        if: steps.plan.outputs.should_publish == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::DOCKERHUB_USERNAME and/or DOCKERHUB_TOKEN are empty in this job. Make sure both are set as *repository* secrets (Settings > Secrets and variables > Actions > Repository secrets tab), not secrets scoped to a GitHub Environment - this job has no 'environment:' key, so environment secrets are invisible to it and resolve to an empty string."
+            exit 1
+          fi
+          echo "Docker Hub credentials are present (values masked)."
+
       - name: Log in to Docker Hub
         if: steps.plan.outputs.should_publish == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -148,7 +167,7 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.plan.outputs.should_publish == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -156,7 +175,7 @@ jobs:
 
       - name: Build and push multi-arch Docker image
         if: steps.plan.outputs.should_publish == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
