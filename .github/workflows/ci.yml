@@ -2,7 +2,7 @@ name: Lint & Test
 
 on:
   push:
-    branches-ignore: [master]   # master is covered by the release workflow's own build
+    branches-ignore: [main]   # main is covered by the release workflow's own build
   pull_request:
   workflow_dispatch: {}
 
