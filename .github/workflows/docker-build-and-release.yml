@@ -1,15 +1,26 @@
-name: Build, Push Multi-Arch Docker Image, Cleanup & Release
+name: Build, Push Multi-Arch Docker Image & Release
 
 on:
-  push: {}                       # Every commit
+  push:
+    branches: [master]
   schedule:
-    - cron: '0 0 * * 1'          # Weekly on Monday at 00:00 UTC
+    - cron: '0 0 * * 1'          # Weekly on Monday at 00:00 UTC, to catch upstream Tor bumps
+  workflow_dispatch: {}
 
 permissions:
   contents: write
+  packages: write
+
+concurrency:
+  group: docker-build-and-release
+  cancel-in-progress: false
+
+env:
+  DOCKERHUB_IMAGE: zetneteork/tor-obfs4-bridge
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  build-publish-clean:
+  build-publish-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -17,44 +28,138 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Needed for arm builds
+      - name: Fetch tags
+        run: git fetch --tags --force
+
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
+
+      # Build amd64 only, loaded locally, purely to read the Tor version that
+      # Debian's apt repo currently resolves to. This decides whether a new
+      # version/release is needed before we do the expensive multi-arch push.
+      - name: Build amd64 image for version detection
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: local/tor-obfs4-bridge:detect
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Detect installed Tor version
+        id: detect
+        run: |
+          RAW_VERSION=$(docker run --rm local/tor-obfs4-bridge:detect dpkg -s tor | awk '/^Version:/{print $2}')
+          if [ -z "$RAW_VERSION" ]; then
+            echo "::error::Could not detect Tor version from built image."
+            exit 1
+          fi
+          echo "Detected Tor version: $RAW_VERSION"
+          echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
+
+      # A git tag matching the Tor version already existing means we have
+      # already released this exact Tor version before. In that case we only
+      # rebuild/republish if files that affect the image content changed
+      # since that tag; a bare `latest` refresh does not need a new release.
+      - name: Determine whether to publish/release
+        id: plan
+        run: |
+          NEW_VERSION="${{ steps.detect.outputs.version }}"
+
+          if git rev-parse -q --verify "refs/tags/$NEW_VERSION" >/dev/null; then
+            TAG_EXISTS=true
+          else
+            TAG_EXISTS=false
+          fi
+
+          CODE_CHANGED=false
+          if [ "$TAG_EXISTS" = "true" ]; then
+            if ! git diff --quiet "$NEW_VERSION" HEAD -- Dockerfile start-tor.sh get-bridge-line; then
+              CODE_CHANGED=true
+            fi
+          fi
+
+          if [ "$TAG_EXISTS" = "false" ]; then
+            SHOULD_PUBLISH=true
+            SHOULD_RELEASE=true
+          elif [ "$CODE_CHANGED" = "true" ]; then
+            SHOULD_PUBLISH=true
+            SHOULD_RELEASE=false
+          else
+            SHOULD_PUBLISH=false
+            SHOULD_RELEASE=false
+          fi
+
+          echo "Version=$NEW_VERSION TagExists=$TAG_EXISTS CodeChanged=$CODE_CHANGED ShouldPublish=$SHOULD_PUBLISH ShouldRelease=$SHOULD_RELEASE"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+
+      # Keep export.sh / docker-compose.yml / kube-deployment.yml in sync with
+      # the version we are about to release, commit that, and tag it -
+      # mirroring how version bumps were previously done by hand.
+      - name: Bump version in tracked files and tag
+        if: steps.plan.outputs.should_release == 'true'
+        run: |
+          VERSION="${{ steps.plan.outputs.version }}"
+
+          sed -i "s/^export VERSION=.*/export VERSION=${VERSION}/" export.sh
+          sed -i "s#image: ${DOCKERHUB_IMAGE}:.*#image: ${DOCKERHUB_IMAGE}:${VERSION}#" docker-compose.yml kube-deployment.yml
+
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add export.sh docker-compose.yml kube-deployment.yml
+            git commit -m "${VERSION}"
+            git push origin HEAD:master
+          fi
+
+          git tag "${VERSION}"
+          git push origin "refs/tags/${VERSION}"
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        if: steps.plan.outputs.should_publish == 'true'
+        uses: docker/login-action@v3
         with:
           registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Determine version (incrementing)
-        id: version
-        run: |
-          echo "VERSION=${{ github.run_number }}" >> $GITHUB_ENV
-          echo "RELEASE_TAG=v${{ github.run_number }}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${{ github.run_number }}" >> $GITHUB_ENV
-          echo "Computed VERSION=${{ github.run_number }}"
+      - name: Log in to GHCR
+        if: steps.plan.outputs.should_publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push multi-arch Docker image
-        uses: docker/build-push-action@v4
+        if: steps.plan.outputs.should_publish == 'true'
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
-            zetneteork/speedtest:latest
-            zetneteork/speedtest:${{ env.IMAGE_TAG }}
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.plan.outputs.version }}
+            ${{ env.DOCKERHUB_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ steps.plan.outputs.version }}
+            ${{ env.GHCR_IMAGE }}:latest
 
-      - name: Cleanup old Docker tags (keep latest 10)
+      - name: Cleanup old Docker Hub tags (keep latest 10)
+        if: steps.plan.outputs.should_publish == 'true'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          REPO: zetneteork/speedtest
+          REPO: ${{ env.DOCKERHUB_IMAGE }}
         run: |
           echo "Fetching list of tags for $REPO..."
           TOKEN=$(curl -s -X POST -H "Content-Type: application/json" \
@@ -62,25 +167,25 @@ jobs:
             https://hub.docker.com/v2/users/login/ | jq -r .token)
 
           if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
-            echo "❌ Failed to authenticate with Docker Hub."
+            echo "::error::Failed to authenticate with Docker Hub."
             exit 1
           fi
 
-          # Fetch all tags except 'latest', sorted by name descending
+          # Fetch all tags except 'latest', sorted by version, descending.
           TAGS=$(curl -s -H "Authorization: JWT $TOKEN" \
             "https://hub.docker.com/v2/repositories/$REPO/tags/?page_size=100" \
-            | jq -r '.results[].name' | grep -v latest | sort -rn)
+            | jq -r '.results[].name' | grep -v '^latest$' | sort -rV)
 
           echo "All version tags:"
           echo "$TAGS"
 
-          # Keep latest 10 (numeric), delete the rest
+          # Keep the latest 10, delete the rest.
           TO_DELETE=$(echo "$TAGS" | tail -n +11)
 
           if [ -z "$TO_DELETE" ]; then
-            echo "✅ Nothing to delete — less than or equal to 10 builds present."
+            echo "Nothing to delete - 10 or fewer versioned tags present."
           else
-            echo "🧹 Deleting old tags:"
+            echo "Deleting old tags:"
             echo "$TO_DELETE"
             for TAG in $TO_DELETE; do
               echo "Deleting $REPO:$TAG"
@@ -90,22 +195,28 @@ jobs:
           fi
 
       - name: Create GitHub release
+        if: steps.plan.outputs.should_release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ env.VERSION }}
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
-          TARGET_COMMIT: ${{ github.sha }}
+          VERSION: ${{ steps.plan.outputs.version }}
         run: |
-          echo "Creating GitHub release ${RELEASE_TAG}"
-          payload=$(jq -n --arg tag "$RELEASE_TAG" \
-                         --arg name "Release $RELEASE_TAG" \
-                         --arg body "Multi-arch build (amd64, arm64, armhf) for version $VERSION (workflow run $GITHUB_RUN_ID)" \
-                         --arg target "$TARGET_COMMIT" \
-                         '{ tag_name: $tag, name: $name, body: $body, target_commitish: $target, draft: false, prerelease: false }')
+          echo "Creating GitHub release ${VERSION}"
+          body=$(cat <<EOF
+          Multi-arch build (amd64, arm64, armhf) of Tor ${VERSION}.
+
+          Images:
+          - \`docker.io/${DOCKERHUB_IMAGE}:${VERSION}\`
+          - \`ghcr.io/${{ github.repository }}:${VERSION}\`
+          EOF
+          )
+          payload=$(jq -n --arg tag "$VERSION" \
+                         --arg name "Release $VERSION" \
+                         --arg body "$body" \
+                         '{ tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false }')
           curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
             -d "$payload" \
             "https://api.github.com/repos/${{ github.repository }}/releases" \
-            | jq -r '.html_url // "no url returned (maybe an error)"' || true
+            | jq -r '.html_url // "no url returned (maybe an error)"'
