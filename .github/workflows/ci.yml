@@ -1,0 +1,93 @@
+name: Lint & Test
+
+on:
+  push:
+    branches-ignore: [master]   # master is covered by the release workflow's own build
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Validates workflow YAML/expressions and, when shellcheck is on PATH
+      # (it is, on ubuntu-latest), lints every `run:` step's shell too.
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1.72.0
+        with:
+          fail_level: error
+
+      - name: Shellcheck standalone scripts
+        run: shellcheck start-tor.sh get-bridge-line docker_start.sh export.sh scripts/*.sh
+
+      - name: Hadolint Dockerfile
+        uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: Dockerfile
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run version/release-plan unit tests
+        run: bash scripts/test-release-plan.sh
+
+  build-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (amd64 only, not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: tor-obfs4-bridge:smoke-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run container and verify Tor starts
+        run: |
+          docker run -d --name smoke-test \
+            -e OR_PORT=12345 \
+            -e PT_PORT=12346 \
+            -e EMAIL=test@example.com \
+            -e TOR_OR_PORT_IPV4=1 \
+            -e TOR_EXITRELAY=0 \
+            -e TOR_BRIDGERELAY=1 \
+            tor-obfs4-bridge:smoke-test
+
+          sleep 10
+
+          echo "--- container logs ---"
+          docker logs smoke-test
+
+          if [ "$(docker inspect -f '{{.State.Running}}' smoke-test)" != "true" ]; then
+            echo "::error::Container exited unexpectedly, see logs above."
+            docker inspect -f 'Exit code: {{.State.ExitCode}}' smoke-test
+            exit 1
+          fi
+
+          if ! docker logs smoke-test 2>&1 | grep -q 'Starting tor\.'; then
+            echo "::error::Tor did not report starting."
+            exit 1
+          fi
+
+          if ! docker exec smoke-test grep -q 'ORPort 12345' /etc/tor/torrc; then
+            echo "::error::Generated torrc is missing the expected ORPort line."
+            docker exec smoke-test cat /etc/tor/torrc
+            exit 1
+          fi
+
+          docker stop smoke-test

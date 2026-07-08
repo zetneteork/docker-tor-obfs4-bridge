@@ -62,7 +62,8 @@ jobs:
           # Debian package versions may contain characters (: ~ +) that are
           # invalid in git tag names and Docker image tags. Sanitize for use
           # as an identifier, but keep the raw string for display purposes.
-          SAFE_VERSION=$(echo "$RAW_VERSION" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[.-]+//; s/[.-]+$//')
+          # (See scripts/sanitize-version.sh - unit tested in scripts/test-release-plan.sh.)
+          SAFE_VERSION=$(scripts/sanitize-version.sh "$RAW_VERSION")
           echo "Detected Tor version: $RAW_VERSION (tag: $SAFE_VERSION)"
           echo "version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
           echo "raw_version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
@@ -96,21 +97,15 @@ jobs:
             fi
           fi
 
-          if [ "$RELEASE_EXISTS" = "false" ]; then
-            SHOULD_PUBLISH=true
-            SHOULD_RELEASE=true
-          elif [ "$CODE_CHANGED" = "true" ]; then
-            SHOULD_PUBLISH=true
-            SHOULD_RELEASE=false
-          else
-            SHOULD_PUBLISH=false
-            SHOULD_RELEASE=false
-          fi
+          # See scripts/release-plan.sh - unit tested in scripts/test-release-plan.sh.
+          eval "$(scripts/release-plan.sh "$RELEASE_EXISTS" "$CODE_CHANGED")"
 
-          echo "Version=$NEW_VERSION ReleaseExists=$RELEASE_EXISTS CodeChanged=$CODE_CHANGED ShouldPublish=$SHOULD_PUBLISH ShouldRelease=$SHOULD_RELEASE"
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
-          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Version=$NEW_VERSION ReleaseExists=$RELEASE_EXISTS CodeChanged=$CODE_CHANGED ShouldPublish=$should_publish ShouldRelease=$should_release"
+          {
+            echo "version=$NEW_VERSION"
+            echo "should_publish=$should_publish"
+            echo "should_release=$should_release"
+          } >> "$GITHUB_OUTPUT"
 
       # docker/login-action fails with an opaque "cannot perform an
       # interactive login" error when the username/password it receives are
