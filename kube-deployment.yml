@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: tor
-          image: zetneteork/tor-obfs4-bridge:0.4.8.17-2
+          image: zetneteork/tor-obfs4-bridge:0.4.9.11-1~d13.trixie+1
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
