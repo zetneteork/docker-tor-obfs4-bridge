@@ -59,8 +59,13 @@ jobs:
             echo "::error::Could not detect Tor version from built image."
             exit 1
           fi
-          echo "Detected Tor version: $RAW_VERSION"
-          echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
+          # Debian package versions may contain characters (: ~ +) that are
+          # invalid in git tag names and Docker image tags. Sanitize for use
+          # as an identifier, but keep the raw string for display purposes.
+          SAFE_VERSION=$(echo "$RAW_VERSION" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[.-]+//; s/[.-]+$//')
+          echo "Detected Tor version: $RAW_VERSION (tag: $SAFE_VERSION)"
+          echo "version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "raw_version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
 
       # A git tag matching the Tor version already existing means we have
       # already released this exact Tor version before. In that case we only
@@ -199,10 +204,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.plan.outputs.version }}
+          RAW_VERSION: ${{ steps.detect.outputs.raw_version }}
         run: |
           echo "Creating GitHub release ${VERSION}"
           body=$(cat <<EOF
-          Multi-arch build (amd64, arm64, armhf) of Tor ${VERSION}.
+          Multi-arch build (amd64, arm64, armhf) of Tor ${RAW_VERSION}.
 
           Images:
           - \`docker.io/${DOCKERHUB_IMAGE}:${VERSION}\`
