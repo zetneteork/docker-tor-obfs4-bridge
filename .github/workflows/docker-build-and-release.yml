@@ -112,32 +112,6 @@ jobs:
           echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
 
-      # Keep export.sh / docker-compose.yml / kube-deployment.yml in sync with
-      # the version we are about to release, commit that, and tag it -
-      # mirroring how version bumps were previously done by hand.
-      - name: Bump version in tracked files and tag
-        if: steps.plan.outputs.should_release == 'true'
-        run: |
-          VERSION="${{ steps.plan.outputs.version }}"
-
-          sed -i "s/^export VERSION=.*/export VERSION=${VERSION}/" export.sh
-          sed -i "s#image: ${DOCKERHUB_IMAGE}:.*#image: ${DOCKERHUB_IMAGE}:${VERSION}#" docker-compose.yml kube-deployment.yml
-
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add export.sh docker-compose.yml kube-deployment.yml
-            git commit -m "${VERSION}"
-            git push origin HEAD:master
-          fi
-
-          # -f/--force: a prior run may have already pushed this tag before
-          # failing at a later step (e.g. registry login); re-pointing it at
-          # the current commit is safe since no release has been published
-          # under it yet (that's the precondition for should_release=true).
-          git tag -f "${VERSION}"
-          git push --force origin "refs/tags/${VERSION}"
-
       # docker/login-action fails with an opaque "cannot perform an
       # interactive login" error when the username/password it receives are
       # empty, which is what happens if DOCKERHUB_USERNAME/DOCKERHUB_TOKEN
@@ -228,6 +202,34 @@ jobs:
                 "https://hub.docker.com/v2/repositories/$REPO/tags/$TAG/" > /dev/null
             done
           fi
+
+      # Only touch the repo's tracked files once the multi-arch image has
+      # actually been built and pushed successfully - keeps export.sh /
+      # docker-compose.yml / kube-deployment.yml from ever referencing a
+      # version that isn't really published, mirroring how version bumps
+      # were previously done by hand.
+      - name: Bump version in tracked files and tag
+        if: steps.plan.outputs.should_release == 'true'
+        run: |
+          VERSION="${{ steps.plan.outputs.version }}"
+
+          sed -i "s/^export VERSION=.*/export VERSION=${VERSION}/" export.sh
+          sed -i "s#image: ${DOCKERHUB_IMAGE}:.*#image: ${DOCKERHUB_IMAGE}:${VERSION}#" docker-compose.yml kube-deployment.yml
+
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add export.sh docker-compose.yml kube-deployment.yml
+            git commit -m "${VERSION}"
+            git push origin HEAD:master
+          fi
+
+          # -f/--force: a prior run may have already pushed this tag before
+          # failing at a later step; re-pointing it at the current commit is
+          # safe since no release has been published under it yet (that's
+          # the precondition for should_release=true).
+          git tag -f "${VERSION}"
+          git push --force origin "refs/tags/${VERSION}"
 
       - name: Create GitHub release
         if: steps.plan.outputs.should_release == 'true'
