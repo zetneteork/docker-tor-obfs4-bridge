@@ -23,7 +23,7 @@ RUN \
     apt install -y \
         tor \
         tor-geoipdb \
-        obfs4proxy/${VERSION_CODENAME} \
+        "obfs4proxy/${VERSION_CODENAME}" \
         --no-install-recommends &&\
     #apt dist-upgrade -qyf &&\
     echo "**** cleanup ****" && \
@@ -39,7 +39,7 @@ RUN \
     chown debian-tor:debian-tor /etc/tor &&\
     chown debian-tor:debian-tor /var/log/tor &&\
     echo "install completed" &&\
-    dpkg -s tor | grep '^Version:'
+    dpkg-query -W -f='Version: ${Version}\n' tor
 
     
 COPY start-tor.sh /usr/local/bin

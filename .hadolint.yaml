@@ -1,0 +1,4 @@
+ignored:
+  # apt (not apt-get) is used deliberately in Dockerfile - see commit
+  # 7ed44bb ("0.4.8.17-2"), which switched from apt-get to apt on purpose.
+  - DL3027
