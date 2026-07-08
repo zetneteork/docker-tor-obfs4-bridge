@@ -67,29 +67,36 @@ jobs:
           echo "version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
           echo "raw_version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
 
-      # A git tag matching the Tor version already existing means we have
-      # already released this exact Tor version before. In that case we only
-      # rebuild/republish if files that affect the image content changed
-      # since that tag; a bare `latest` refresh does not need a new release.
+      # A published GitHub release for this Tor version is the only proof the
+      # full pipeline (tag + images + release) completed successfully before.
+      # A git tag alone is not enough: the tag is pushed early, so a run that
+      # fails later (e.g. registry login) would otherwise look "already done"
+      # on the next run and skip publishing forever. If no release exists yet
+      # we always (re)do the full publish, even if a stale tag is present.
       - name: Determine whether to publish/release
         id: plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           NEW_VERSION="${{ steps.detect.outputs.version }}"
 
-          if git rev-parse -q --verify "refs/tags/$NEW_VERSION" >/dev/null; then
-            TAG_EXISTS=true
+          RELEASE_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$NEW_VERSION")
+          if [ "$RELEASE_STATUS" = "200" ]; then
+            RELEASE_EXISTS=true
           else
-            TAG_EXISTS=false
+            RELEASE_EXISTS=false
           fi
 
           CODE_CHANGED=false
-          if [ "$TAG_EXISTS" = "true" ]; then
+          if [ "$RELEASE_EXISTS" = "true" ] && git rev-parse -q --verify "refs/tags/$NEW_VERSION" >/dev/null; then
             if ! git diff --quiet "$NEW_VERSION" HEAD -- Dockerfile start-tor.sh get-bridge-line; then
               CODE_CHANGED=true
             fi
           fi
 
-          if [ "$TAG_EXISTS" = "false" ]; then
+          if [ "$RELEASE_EXISTS" = "false" ]; then
             SHOULD_PUBLISH=true
             SHOULD_RELEASE=true
           elif [ "$CODE_CHANGED" = "true" ]; then
@@ -100,7 +107,7 @@ jobs:
             SHOULD_RELEASE=false
           fi
 
-          echo "Version=$NEW_VERSION TagExists=$TAG_EXISTS CodeChanged=$CODE_CHANGED ShouldPublish=$SHOULD_PUBLISH ShouldRelease=$SHOULD_RELEASE"
+          echo "Version=$NEW_VERSION ReleaseExists=$RELEASE_EXISTS CodeChanged=$CODE_CHANGED ShouldPublish=$SHOULD_PUBLISH ShouldRelease=$SHOULD_RELEASE"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
           echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
@@ -124,8 +131,12 @@ jobs:
             git push origin HEAD:master
           fi
 
-          git tag "${VERSION}"
-          git push origin "refs/tags/${VERSION}"
+          # -f/--force: a prior run may have already pushed this tag before
+          # failing at a later step (e.g. registry login); re-pointing it at
+          # the current commit is safe since no release has been published
+          # under it yet (that's the precondition for should_release=true).
+          git tag -f "${VERSION}"
+          git push --force origin "refs/tags/${VERSION}"
 
       - name: Log in to Docker Hub
         if: steps.plan.outputs.should_publish == 'true'
