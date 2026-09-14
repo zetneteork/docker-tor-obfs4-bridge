@@ -16,7 +16,7 @@ jobs:
       # Validates workflow YAML/expressions and, when shellcheck is on PATH
       # (it is on ubuntu-latest), lints every `run:` step's shell too.
       - name: actionlint
-        uses: reviewdog/action-actionlint@v1.72.0
+        uses: reviewdog/action-actionlint@v1.73.4
         with:
           fail_level: error
 
@@ -24,7 +24,7 @@ jobs:
         run: shellcheck start-tor.sh get-bridge-line docker_start.sh export.sh scripts/*.sh
 
       - name: Hadolint Dockerfile
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@v3.5.0
         with:
           dockerfile: Dockerfile
 
