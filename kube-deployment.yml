@@ -7,7 +7,7 @@
 #   kubectl apply -k k8s/overlays/example/
 #
 # The kustomize base (k8s/base/) includes proper security hardening:
-#   - non-root user (debian-tor, uid 101)
+#   - non-root user (debian-tor, uid=100 gid=101 in the Debian tor package)
 #   - capability drop ALL + NET_BIND_SERVICE only
 #   - seccomp RuntimeDefault
 #   - resource requests/limits
@@ -81,7 +81,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
+        runAsUser: 100
         runAsGroup: 101
         fsGroup: 101
         seccompProfile:

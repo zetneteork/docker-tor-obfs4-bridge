@@ -53,7 +53,7 @@ Internet
 - Base image: `debian:stable-slim`
 - Tor source: [deb.torproject.org](https://deb.torproject.org) (official Tor Project repository)
 - `obfs4proxy` from Debian backports
-- Runs as `debian-tor` (uid 101) — never root
+- Runs as `debian-tor` (uid=100, gid=101) — never root
 - `obfs4proxy` is granted `cap_net_bind_service` so it can bind to ports < 1024
 
 ---
@@ -151,7 +151,7 @@ Share this line with censored users or submit it to
 
 The `k8s/` directory contains a production-grade kustomize layout with:
 
-- Non-root security context (`runAsUser: 101`, `fsGroup: 101`)
+- Non-root security context (`runAsUser: 100`, `runAsGroup: 101`, `fsGroup: 101`)
 - `capabilities: drop [ALL] add [NET_BIND_SERVICE]`
 - `seccompProfile: RuntimeDefault`
 - Resource requests/limits
@@ -265,6 +265,17 @@ Manual intervention is only needed when changing the Dockerfile or scripts.
 **Container exits immediately**
 - Check `docker logs tor-bridge` for the error.
 - Most likely cause: a required environment variable is not set.
+
+**Kubernetes: `/etc/tor/torrc: Permission denied`**
+- This means the pod is running as the wrong UID. In the image, `debian-tor`
+  is **uid=100, gid=101**. If your manifest or Helm chart sets `runAsUser: 101`
+  (a common mistake — 101 is the gid, not the uid), the process cannot write
+  `/etc/tor/torrc` which is owned by uid 100.
+- **Fix:** ensure your `podSecurityContext` uses `runAsUser: 100`, `runAsGroup: 101`,
+  `fsGroup: 101`. The kustomize manifests and Helm chart in this repository
+  already use the correct values.
+- Verify with: `docker run --rm --entrypoint sh <image> -c 'id debian-tor'`
+  — you should see `uid=100(debian-tor) gid=101(debian-tor)`.
 
 **`Bootstrapped 0%` stays there for > 5 minutes**
 - Verify ports `OR_PORT` and `PT_PORT` are open inbound in your firewall/cloud security group.

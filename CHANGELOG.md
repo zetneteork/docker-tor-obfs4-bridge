@@ -10,7 +10,40 @@ Versions match the Tor Debian package version with an optional build suffix
 
 ## [Unreleased]
 
+### Fixed
+- **Kubernetes `Permission denied` crash** — `k8s/base/deployment.yaml` and
+  `kube-deployment.yml` incorrectly set `runAsUser: 101`. In the actual Debian
+  `tor` package `debian-tor` is **uid=100, gid=101**; `/etc/tor` is owned by
+  uid 100 (mode 755), so running as uid 101 caused:
+  `start-tor.sh: /etc/tor/torrc: Permission denied`.
+  Fixed to `runAsUser: 100`, `runAsGroup: 101`, `fsGroup: 101`.
+  Docker was unaffected (the `USER debian-tor` directive resolves the name to
+  uid 100 at runtime).
+
 ### Added
+- `tests/image-permissions.bats` — Docker-gated tests that assert `debian-tor`
+  is uid=100/gid=101, that uid 100 can write `/etc/tor`, that uid 101 cannot
+  (confirming the original bug), and that `start-tor.sh` produces no
+  `Permission denied` output when run as uid 100.
+- `tests/k8s-manifests.bats` — Static grep-guards that both
+  `k8s/base/deployment.yaml` and `kube-deployment.yml` use `runAsUser: 100`,
+  `runAsGroup: 101`, and `fsGroup: 101`. Runs in the `bats-tests` CI job
+  without a cluster.
+- Two new tests in `tests/start-tor.bats`:
+  - Fails with non-zero exit when `TORRC_PATH` points at a read-only
+    directory (reproduces the Kubernetes permission-denied scenario).
+  - Succeeds and writes the torrc when the path is writable.
+- `build-smoke-test` CI job now runs `image-permissions.bats` against the
+  built image and fails if container logs contain `Permission denied`.
+
+### Changed
+- `README.md`: corrected `debian-tor` identity from `uid 101` to `uid=100,
+  gid=101`; added Kubernetes troubleshooting entry for the permission-denied
+  error with root-cause explanation and fix.
+- `README.md`: Kubernetes section now documents `runAsUser: 100`,
+  `runAsGroup: 101`, `fsGroup: 101`.
+
+### Added (previously)
 - `.github/dependabot.yml` — weekly automated updates for GitHub Actions and
   the `debian:stable-slim` Docker base image.
 - `tests/start-tor.bats` — bats unit tests for `start-tor.sh` covering env
