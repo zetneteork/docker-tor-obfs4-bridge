@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Example overlay – copy and customise for your environment.
+# Apply with: kubectl apply -k k8s/overlays/example/
+
+bases:
+  - ../../base
+
+resources:
+  - secret.yaml
+
+# Override the container image to pin a specific release version.
+images:
+  - name: ghcr.io/zetneteork/docker-tor-obfs4-bridge
+    newTag: "0.4.9.12-1-d13.trixie-1"
+
+# Patch OR_PORT, PT_PORT, and EMAIL for this environment.
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: tor-obfs4-bridge
+        namespace: tor
+      spec:
+        template:
+          spec:
+            containers:
+              - name: tor-obfs4-bridge
+                env:
+                  - name: OR_PORT
+                    value: "2123"
+                  - name: PT_PORT
+                    value: "2133"
+                  - name: TOR_OR_PORT_IPV4
+                    value: "1"
+                  - name: TOR_EXITRELAY
+                    value: "0"
+                  - name: TOR_BRIDGERELAY
+                    value: "1"

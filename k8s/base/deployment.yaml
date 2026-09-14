@@ -1,65 +1,3 @@
-# kube-deployment.yml – Single-file convenience manifest for kubectl apply.
-#
-# This file is kept in sync with the image version automatically by the
-# release workflow (docker-build-and-release.yml).
-#
-# For production deployments consider using the kustomize layout instead:
-#   kubectl apply -k k8s/overlays/example/
-#
-# The kustomize base (k8s/base/) includes proper security hardening:
-#   - non-root user (debian-tor, uid 101)
-#   - capability drop ALL + NET_BIND_SERVICE only
-#   - seccomp RuntimeDefault
-#   - resource requests/limits
-#   - liveness/readiness probes
-#
-# To create the required secret before applying:
-#   kubectl create namespace tor
-#   kubectl create secret generic tor-config \
-#     --namespace tor \
-#     --from-literal=email=tor@example.org
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: tor
-  labels:
-    name: tor
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: tor-datadir
-  namespace: tor
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: tor-obfs4-bridge
-  namespace: tor
-  labels:
-    app.kubernetes.io/name: tor-obfs4-bridge
-spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Local
-  ports:
-    - name: orport
-      port: 2123
-      targetPort: orport
-      protocol: TCP
-    - name: ptport
-      port: 2133
-      targetPort: ptport
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: tor-obfs4-bridge
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,18 +5,25 @@ metadata:
   namespace: tor
   labels:
     app.kubernetes.io/name: tor-obfs4-bridge
+    app.kubernetes.io/component: bridge
 spec:
+  # A Tor bridge MUST run as a single replica – running more than one on the
+  # same external IP with the same key directory is unsupported.
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: tor-obfs4-bridge
+  # Recreate (not RollingUpdate) avoids two pods sharing the data dir.
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: tor-obfs4-bridge
+        app.kubernetes.io/component: bridge
     spec:
+      # Run as the debian-tor user (uid 101 in the Debian tor package).
+      # This matches the USER directive in the Dockerfile.
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -86,29 +31,37 @@ spec:
         fsGroup: 101
         seccompProfile:
           type: RuntimeDefault
+
       containers:
         - name: tor-obfs4-bridge
-          image: zetneteork/tor-obfs4-bridge:0.4.9.12-1-d13.trixie-1
+          # Image is patched by the release workflow via kustomize image tag.
+          image: ghcr.io/zetneteork/docker-tor-obfs4-bridge:latest
           imagePullPolicy: Always
+
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: false   # tor writes state files at runtime
             capabilities:
               drop: ["ALL"]
-              add: ["NET_BIND_SERVICE"]
+              add: ["NET_BIND_SERVICE"]    # needed so obfs4proxy can bind < 1024
+
           env:
             - name: OR_PORT
               value: "2123"
             - name: PT_PORT
               value: "2133"
             - name: EMAIL
-              value: "tor@opentree.cz"
+              valueFrom:
+                secretKeyRef:
+                  name: tor-config
+                  key: email
             - name: TOR_OR_PORT_IPV4
               value: "1"
             - name: TOR_EXITRELAY
               value: "0"
             - name: TOR_BRIDGERELAY
               value: "1"
+
           ports:
             - name: orport
               containerPort: 2123
@@ -116,6 +69,8 @@ spec:
             - name: ptport
               containerPort: 2133
               protocol: TCP
+
+          # Tor takes up to ~2 minutes to bootstrap and register with the network.
           livenessProbe:
             exec:
               command: ["pgrep", "-x", "tor"]
@@ -123,6 +78,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
             timeoutSeconds: 5
+
           readinessProbe:
             exec:
               command:
@@ -133,6 +89,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 10
             timeoutSeconds: 5
+
           resources:
             requests:
               cpu: "50m"
@@ -140,11 +97,13 @@ spec:
             limits:
               cpu: "500m"
               memory: "256Mi"
+
           volumeMounts:
             - name: datadir
               mountPath: /var/lib/tor
             - name: logdir
               mountPath: /var/log/tor
+
       volumes:
         - name: datadir
           persistentVolumeClaim:

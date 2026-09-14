@@ -1,0 +1,16 @@
+# Local environment overrides – copy export.sh and edit, do NOT commit real credentials.
+.env
+
+# Editor artefacts
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Docker build artefacts
+*.tar
+
+# Local test output (but NOT test fixtures committed under tests/fixtures/).
+*.log
+!tests/fixtures/*.log
