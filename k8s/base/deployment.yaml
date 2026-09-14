@@ -22,11 +22,13 @@ spec:
         app.kubernetes.io/name: tor-obfs4-bridge
         app.kubernetes.io/component: bridge
     spec:
-      # Run as the debian-tor user (uid 101 in the Debian tor package).
-      # This matches the USER directive in the Dockerfile.
+      # Run as the debian-tor user.
+      # In the official Debian tor package debian-tor is uid=100, gid=101.
+      # Using uid 101 (wrong) causes "Permission denied" writing /etc/tor/torrc
+      # because /etc/tor is owned by uid 100 mode 755.
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
+        runAsUser: 100
         runAsGroup: 101
         fsGroup: 101
         seccompProfile:

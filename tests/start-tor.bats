@@ -197,3 +197,39 @@ base_env() {
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"STUB_TOR invoked: -f /etc/tor/torrc"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Unwritable torrc path – reproduces the Kubernetes uid/gid permission bug
+#
+# When the pod runs as the wrong UID (e.g. 101 instead of 100) the torrc
+# directory is not writable and start-tor.sh fails with "Permission denied".
+# This test simulates that by pointing TORRC_PATH at a read-only directory.
+# Regression guard: this must fail with a non-zero exit and a meaningful
+# error message rather than silently producing a broken torrc.
+# ---------------------------------------------------------------------------
+
+@test "fails with clear error when torrc path is not writable (simulates wrong uid)" {
+    base_env
+    # Create a read-only directory to simulate /etc/tor owned by a different uid.
+    readonly_dir="$(mktemp -d)"
+    chmod 555 "${readonly_dir}"
+    export TORRC_PATH="${readonly_dir}/torrc"
+
+    run bash "${START_TOR}"
+
+    # Restore permissions so teardown can remove it.
+    chmod 755 "${readonly_dir}"
+
+    # The script must exit non-zero — a silent failure is not acceptable.
+    [ "${status}" -ne 0 ]
+}
+
+@test "succeeds when torrc path is writable (correct uid scenario)" {
+    base_env
+    writable_dir="$(mktemp -d)"
+    export TORRC_PATH="${writable_dir}/torrc"
+    run bash "${START_TOR}"
+    [ "${status}" -eq 0 ]
+    [ -f "${writable_dir}/torrc" ]
+    rm -rf "${writable_dir}"
+}

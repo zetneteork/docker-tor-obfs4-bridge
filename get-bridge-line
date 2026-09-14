@@ -32,28 +32,28 @@ fi
 # Public IP address – prefer the "changed" message, fall back to "suggested".
 addr=$(grep 'Our IP Address has changed from' "${TOR_LOG}" \
     | sed 's/.* \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\); .*/\1/' \
-    | tail -1)
+    | tail -1 || true)
 
 if [[ -z "${addr}" ]]; then
     addr=$(grep 'External address seen and suggested by a directory authority:' "${TOR_LOG}" \
         | sed 's/.*: \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)/\1/' \
-        | tail -1)
+        | tail -1 || true)
 fi
 
 # obfs4 port.
 port=$(grep "Registered server transport 'obfs4' at" "${TOR_LOG}" \
     | sed "s/.*:\([0-9]\{1,5\}\)'$/\1/" \
-    | tail -1)
+    | tail -1 || true)
 
 # Identity fingerprint.
 fingerprint=$(grep "Your Tor server's identity key fingerprint is" "${TOR_LOG}" \
     | sed "s/.*'\([0-9A-F]\{40\}\)'$/\1/" \
-    | tail -1)
+    | tail -1 || true)
 
 # obfs4 cert + iat-mode arguments from the PT state file.
 obfs4_args=$(grep '^Bridge obfs4' "${PT_STATE}" \
     | sed 's/.*\(cert=.*\)/\1/' \
-    | tail -1)
+    | tail -1 || true)
 
 # ---------------------------------------------------------------------------
 # Validate all fields were found

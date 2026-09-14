@@ -54,6 +54,12 @@ jobs:
       - name: Run get-bridge-line bats tests
         run: bats tests/get-bridge-line.bats
 
+      # Static guards: verify Kubernetes manifests use the correct UID/GID
+      # (runAsUser: 100, runAsGroup: 101, fsGroup: 101 matching debian-tor).
+      # Regression guard for the /etc/tor/torrc: Permission denied bug.
+      - name: Run k8s-manifests bats tests
+        run: bats tests/k8s-manifests.bats
+
   build-smoke-test:
     runs-on: ubuntu-latest
     steps:
@@ -74,6 +80,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Install bats-core (for image-permissions tests)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bats
+
+      - name: Run image-permissions bats tests
+        # Verifies debian-tor uid=100/gid=101, directory ownership,
+        # and that uid 100 can write /etc/tor (the torrc write).
+        # Regression guard for the Kubernetes Permission denied crash.
+        env:
+          IMAGE: tor-obfs4-bridge:smoke-test
+        run: bats tests/image-permissions.bats
+
       - name: Run container and verify Tor starts
         run: |
           docker run -d --name smoke-test \
@@ -89,6 +108,18 @@ jobs:
 
           echo "--- container logs ---"
           docker logs smoke-test
+
+          # Regression guard: fail immediately if Permission denied appears.
+          # This is the exact error that was reported in the Kubernetes deployment
+          # caused by running as uid 101 instead of uid 100 (debian-tor).
+          if docker logs smoke-test 2>&1 | grep -q 'Permission denied'; then
+            echo "::error::Container logs contain 'Permission denied'."
+            echo "::error::This indicates a UID/GID mismatch between the manifest"
+            echo "::error::and the image. debian-tor in the image is uid=100/gid=101."
+            echo "::error::Kubernetes manifests must use runAsUser: 100."
+            docker logs smoke-test 2>&1
+            exit 1
+          fi
 
           if [ "$(docker inspect -f '{{.State.Running}}' smoke-test)" != "true" ]; then
             echo "::error::Container exited unexpectedly, see logs above."
