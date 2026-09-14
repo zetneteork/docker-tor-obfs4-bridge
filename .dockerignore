@@ -1,0 +1,38 @@
+# Ignore files not needed inside the Docker build context.
+# Keeping the context small speeds up builds and avoids accidentally
+# copying secrets or generated artefacts into the image.
+
+# Local environment overrides (may contain real credentials).
+.env
+export.sh
+
+# Test fixtures and test suite – not needed at runtime.
+tests/
+
+# Kubernetes / Helm manifests – not part of the image.
+k8s/
+kube-deployment.yml
+docker-compose.yml
+
+# Helper scripts used only locally or in CI.
+docker_start.sh
+scripts/
+
+# Editor and OS artefacts.
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Git metadata.
+.git/
+.github/
+
+# Docs.
+README.md
+CONTRIBUTING.md
+CHANGELOG.md
+SECURITY.md
+LICENSE
+.editorconfig

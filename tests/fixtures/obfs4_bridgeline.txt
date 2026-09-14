@@ -1,0 +1,2 @@
+# obfs4 bridge line for testing
+Bridge obfs4 203.0.113.42:2133 AABBCCDDEEFF00112233445566778899AABBCCDD cert=TESTCERTVALUE1234567890ABCDEF/abcdefghijklmnopqrstu iat-mode=0
