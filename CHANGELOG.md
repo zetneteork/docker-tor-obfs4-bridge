@@ -11,8 +11,25 @@ Versions match the Tor Debian package version with an optional build suffix
 ## [Unreleased]
 
 ### Fixed
-- **Kubernetes `Permission denied` crash** — `k8s/base/deployment.yaml` and
-  `kube-deployment.yml` incorrectly set `runAsUser: 101`. In the actual Debian
+- **`fix-volume-ownership` initContainer crash loop** — the initContainer
+  used `chmod` which requires the `FOWNER` capability (not granted); and
+  `chown -R` without `|| true` caused an `Init:CrashLoopBackOff` on storage
+  backends (e.g. minikube hostpath) where `chown` is blocked by host UID
+  namespace mapping.
+  - Removed `chmod` lines entirely (modes are baked into the Docker image).
+  - Added `|| true` to `chown -R 100:101 /var/lib/tor /var/log/tor` so the
+    initContainer always exits 0; if `chown` fails, Tor's own ownership check
+    produces a clear error rather than the pod looping on the init container.
+  - Applied to both `k8s/base/deployment.yaml` and `kube-deployment.yml`.
+- **Added initContainer to raw k8s manifests** — `k8s/base/deployment.yaml`
+  and `kube-deployment.yml` now include the `fix-volume-ownership`
+  initContainer (matching the Helm chart), so users who deploy via
+  `kubectl apply` also get the volume ownership fix.
+- `tests/k8s-manifests.bats`: 8 new guards — both manifests have the
+  initContainer, use `chown -R 100:101`, use `|| true`, and do not use
+  `chmod`.
+
+
   `tor` package `debian-tor` is **uid=100, gid=101**; `/etc/tor` is owned by
   uid 100 (mode 755), so running as uid 101 caused:
   `start-tor.sh: /etc/tor/torrc: Permission denied`.
