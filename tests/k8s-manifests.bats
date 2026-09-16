@@ -62,6 +62,12 @@ K8S_BASE="${REPO_ROOT}/k8s/base/deployment.yaml"
     [ "${output}" != "0" ]
 }
 
+@test "kube-deployment.yml: initContainer chown uses || true (resilient against minikube hostpath)" {
+    run grep -c "|| true" "${KUBE_MANIFEST}"
+    [ "${status}" -eq 0 ]
+    [ "${output}" != "0" ]
+}
+
 @test "kube-deployment.yml: initContainer does NOT use chmod (Operation not permitted)" {
     # chmod requires FOWNER capability which is not granted.
     # The correct modes are already set in the Docker image.
@@ -115,6 +121,12 @@ K8S_BASE="${REPO_ROOT}/k8s/base/deployment.yaml"
 
 @test "k8s/base/deployment.yaml: initContainer uses chown -R 100:101" {
     run grep -c "chown -R 100:101" "${K8S_BASE}"
+    [ "${status}" -eq 0 ]
+    [ "${output}" != "0" ]
+}
+
+@test "k8s/base/deployment.yaml: initContainer chown uses || true (resilient against minikube hostpath)" {
+    run grep -c "|| true" "${K8S_BASE}"
     [ "${status}" -eq 0 ]
     [ "${output}" != "0" ]
 }

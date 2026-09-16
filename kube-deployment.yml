@@ -97,7 +97,12 @@ spec:
           command:
             - sh
             - -c
-            - chown -R 100:101 /var/lib/tor /var/log/tor
+            - |
+              # chown the volume mounts so Tor's DataDirectory is owned by
+              # debian-tor (uid=100, gid=101).  || true prevents a crash loop
+              # on storage backends (e.g. minikube hostpath) where the chown
+              # syscall is blocked by the host UID namespace mapping.
+              chown -R 100:101 /var/lib/tor /var/log/tor || true
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
