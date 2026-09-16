@@ -34,6 +34,34 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
+      # Fix volume ownership before Tor starts.
+      # Kubernetes mounts PVCs and emptyDirs owned by root (uid 0).
+      # Tor refuses to use DataDirectory /var/lib/tor unless it is owned
+      # by the running user (debian-tor uid=100). fsGroup sets the group
+      # but not the owner uid. This initContainer runs chown as root.
+      # chmod is NOT used – it requires FOWNER capability which is not
+      # granted; the correct modes (700/750) are already set in the image.
+      initContainers:
+        - name: fix-volume-ownership
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - chown -R 100:101 /var/lib/tor /var/log/tor
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
+          volumeMounts:
+            - name: datadir
+              mountPath: /var/lib/tor
+            - name: logdir
+              mountPath: /var/log/tor
+
       containers:
         - name: tor-obfs4-bridge
           # Image is patched by the release workflow via kustomize image tag.
