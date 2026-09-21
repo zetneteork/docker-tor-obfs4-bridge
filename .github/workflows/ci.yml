@@ -16,7 +16,7 @@ jobs:
       # Validates workflow YAML/expressions and, when shellcheck is on PATH
       # (it is on ubuntu-latest), lints every `run:` step's shell too.
       - name: actionlint
-        uses: reviewdog/action-actionlint@v1.73.4
+        uses: reviewdog/action-actionlint@v1.76.0
         with:
           fail_level: error
 
