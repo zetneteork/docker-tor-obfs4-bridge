@@ -92,7 +92,7 @@ spec:
       # chmod is NOT used – requires FOWNER capability which is not granted.
       initContainers:
         - name: fix-volume-ownership
-          image: busybox:1.36
+          image: busybox:1.38
           imagePullPolicy: IfNotPresent
           command:
             - sh
